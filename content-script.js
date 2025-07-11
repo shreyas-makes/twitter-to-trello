@@ -4,12 +4,14 @@ class TwitterTrelloExporter {
     this.selectedTweets = new Set();
     this.isSelectionMode = false;
     this.tweetEventListeners = new Map();
+    this.mutationObserver = null;
     this.init();
   }
 
   init() {
     this.createFloatingButton();
     this.setupEventListeners();
+    this.setupMutationObserver();
   }
 
   createFloatingButton() {
@@ -39,6 +41,7 @@ class TwitterTrelloExporter {
     document.body.classList.add('twitter-trello-selection-mode');
     this.highlightTweets();
     this.showSelectionOverlay();
+    this.startObservingChanges();
     
     // Update button text
     const button = document.getElementById('twitter-trello-export-btn');
@@ -51,6 +54,7 @@ class TwitterTrelloExporter {
     this.removeHighlights();
     this.hideSelectionOverlay();
     this.selectedTweets.clear();
+    this.stopObservingChanges();
     
     // Reset button
     const button = document.getElementById('twitter-trello-export-btn');
@@ -346,6 +350,107 @@ class TwitterTrelloExporter {
       if (request.action === 'startSelection') {
         this.toggleSelectionMode();
         sendResponse({success: true});
+      }
+    });
+  }
+
+  setupMutationObserver() {
+    // Create observer to watch for DOM changes
+    this.mutationObserver = new MutationObserver((mutations) => {
+      if (!this.isSelectionMode) return;
+      
+      let shouldReattach = false;
+      
+      mutations.forEach((mutation) => {
+        // Check if new nodes were added that might be tweets
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          for (let node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              // Check if this could be a tweet or contain tweets
+              if (node.matches && (
+                node.matches('article[data-testid="tweet"]') ||
+                node.matches('div[data-testid="tweet"]') ||
+                node.matches('article[role="article"]') ||
+                node.querySelector('article[data-testid="tweet"]') ||
+                node.querySelector('div[data-testid="tweet"]')
+              )) {
+                shouldReattach = true;
+                break;
+              }
+            }
+          }
+        }
+      });
+      
+      if (shouldReattach) {
+        console.log('TwitterTrelloExporter: DOM changed, re-attaching event listeners');
+        // Small delay to ensure DOM is fully updated
+        setTimeout(() => {
+          this.reattachEventListeners();
+        }, 100);
+      }
+    });
+  }
+
+  startObservingChanges() {
+    if (this.mutationObserver) {
+      // Observe the main content area where tweets are loaded
+      const mainContent = document.querySelector('main') || 
+                         document.querySelector('[data-testid="primaryColumn"]') || 
+                         document.body;
+      
+      this.mutationObserver.observe(mainContent, {
+        childList: true,
+        subtree: true
+      });
+    }
+  }
+
+  stopObservingChanges() {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+    }
+  }
+
+  reattachEventListeners() {
+    if (!this.isSelectionMode) return;
+    
+    // Get current tweets
+    const tweets = this.getTweetElements();
+    
+    tweets.forEach((tweet, index) => {
+      // Skip if already has event listener
+      if (this.tweetEventListeners.has(tweet)) {
+        return;
+      }
+      
+      // Add selection classes and event listeners
+      tweet.classList.add('twitter-trello-selectable');
+      tweet.dataset.tweetIndex = index;
+      
+      const clickHandler = (e) => {
+        if (this.isSelectionMode) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          this.toggleTweetSelection(tweet);
+        }
+      };
+      
+      // Use capture phase to intercept clicks before other handlers
+      tweet.addEventListener('click', clickHandler, { capture: true });
+      
+      // Also add to all interactive elements within the tweet
+      const interactiveElements = tweet.querySelectorAll('a, button, [role="button"], [role="link"]');
+      interactiveElements.forEach(element => {
+        element.addEventListener('click', clickHandler, { capture: true });
+      });
+      
+      this.tweetEventListeners.set(tweet, clickHandler);
+      
+      // Add visual selection overlay if not present
+      if (!tweet.querySelector('.tweet-selection-overlay')) {
+        this.addSelectionOverlay(tweet);
       }
     });
   }
