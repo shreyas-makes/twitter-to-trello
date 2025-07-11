@@ -233,7 +233,6 @@ class TwitterTrelloExporter {
         </div>
       </div>
       <div class="selection-actions">
-        <button class="cancel-selection-btn" id="cancel-selection-btn">Cancel</button>
         <button id="export-selected-btn" disabled>Export to Trello</button>
       </div>
     `;
@@ -242,10 +241,6 @@ class TwitterTrelloExporter {
     
     document.getElementById('export-selected-btn').addEventListener('click', () => {
       this.exportSelectedTweets();
-    });
-    
-    document.getElementById('cancel-selection-btn').addEventListener('click', () => {
-      this.exitSelectionMode();
     });
   }
 

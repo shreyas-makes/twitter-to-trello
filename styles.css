@@ -195,24 +195,8 @@
   
   .selection-actions {
     display: flex;
-    gap: 10px;
+    justify-content: center;
     align-items: center;
-  }
-  
-  .cancel-selection-btn {
-    padding: 8px 16px;
-    background: #666;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: all 0.2s ease;
-  }
-  
-  .cancel-selection-btn:hover {
-    background: #555;
-    transform: translateY(-1px);
   }
   
   #selection-counter {
