@@ -1,10 +1,12 @@
 // Content script for Twitter pages
 class TwitterTrelloExporter {
   constructor() {
-    this.selectedTweets = new Set();
+    this.selectedTweets = new Map(); // Changed to Map to store tweet elements directly
     this.isSelectionMode = false;
     this.tweetEventListeners = new Map();
     this.mutationObserver = null;
+    this.selectionCounter = 0;
+    this.isExporting = false; // Prevent multiple simultaneous exports
     this.init();
   }
 
@@ -54,6 +56,8 @@ class TwitterTrelloExporter {
     this.removeHighlights();
     this.hideSelectionOverlay();
     this.selectedTweets.clear();
+    this.selectionCounter = 0;
+    this.isExporting = false;
     this.stopObservingChanges();
     
     // Reset button
@@ -138,11 +142,12 @@ class TwitterTrelloExporter {
   }
   
   toggleTweetSelection(tweetElement) {
-    const index = tweetElement.dataset.tweetIndex;
     const overlay = tweetElement.querySelector('.tweet-selection-overlay');
     
-    if (this.selectedTweets.has(index)) {
-      this.selectedTweets.delete(index);
+    if (this.selectedTweets.has(tweetElement)) {
+      // Unselect tweet
+      const selectionInfo = this.selectedTweets.get(tweetElement);
+      this.selectedTweets.delete(tweetElement);
       tweetElement.classList.remove('twitter-trello-selected');
       
       // Update overlay to unselected state
@@ -161,8 +166,16 @@ class TwitterTrelloExporter {
       if (selectionNumber) {
         selectionNumber.remove();
       }
+      
+      // Renumber remaining selections
+      this.renumberSelections();
     } else {
-      this.selectedTweets.add(index);
+      // Select tweet
+      this.selectionCounter++;
+      this.selectedTweets.set(tweetElement, {
+        order: this.selectionCounter,
+        element: tweetElement
+      });
       tweetElement.classList.add('twitter-trello-selected');
       
       // Update overlay to selected state
@@ -179,7 +192,7 @@ class TwitterTrelloExporter {
       // Add selection number badge
       const selectionNumber = document.createElement('div');
       selectionNumber.className = 'selection-number';
-      selectionNumber.textContent = this.selectedTweets.size;
+      selectionNumber.textContent = this.selectionCounter;
       tweetElement.appendChild(selectionNumber);
     }
     
@@ -191,30 +204,101 @@ class TwitterTrelloExporter {
       tweetElement.classList.remove('selection-animation');
     }, 300);
   }
+  
+  renumberSelections() {
+    // Sort by selection order and renumber
+    const selections = Array.from(this.selectedTweets.entries())
+      .sort((a, b) => a[1].order - b[1].order);
+    
+    this.selectedTweets.clear();
+    this.selectionCounter = 0;
+    
+    selections.forEach(([element, info]) => {
+      this.selectionCounter++;
+      this.selectedTweets.set(element, {
+        order: this.selectionCounter,
+        element: element
+      });
+      
+      // Update the number badge
+      const selectionNumber = element.querySelector('.selection-number');
+      if (selectionNumber) {
+        selectionNumber.textContent = this.selectionCounter;
+      }
+    });
+  }
 
   extractTweetData(tweetElement) {
     try {
-      // Extract tweet information from DOM
-      const tweetText = tweetElement.querySelector('[data-testid="tweetText"]')?.textContent || '';
-      const authorName = tweetElement.querySelector('[data-testid="User-Name"]')?.textContent || '';
-      const tweetTime = tweetElement.querySelector('time')?.getAttribute('datetime') || '';
+      // Validate tweet element
+      if (!tweetElement || !tweetElement.querySelector) {
+        console.warn('Invalid tweet element provided to extractTweetData');
+        return null;
+      }
+      
+      // Extract tweet information from DOM with fallback selectors
+      const tweetTextSelectors = [
+        '[data-testid="tweetText"]',
+        '[lang] span',
+        'div[dir="auto"] span'
+      ];
+      
+      let tweetText = '';
+      for (const selector of tweetTextSelectors) {
+        const element = tweetElement.querySelector(selector);
+        if (element && element.textContent) {
+          tweetText = element.textContent;
+          break;
+        }
+      }
+      
+      // Extract author with fallbacks
+      const authorSelectors = [
+        '[data-testid="User-Name"]',
+        '[data-testid="User-Names"] span',
+        'div[dir="ltr"] span'
+      ];
+      
+      let authorName = '';
+      for (const selector of authorSelectors) {
+        const element = tweetElement.querySelector(selector);
+        if (element && element.textContent) {
+          authorName = element.textContent;
+          break;
+        }
+      }
+      
+      // Get timestamp
+      const timeElement = tweetElement.querySelector('time');
+      const tweetTime = timeElement?.getAttribute('datetime') || '';
       
       // Get tweet URL
-      const timeLink = tweetElement.querySelector('time')?.closest('a');
-      const tweetUrl = timeLink ? `https://twitter.com${timeLink.getAttribute('href')}` : '';
+      const timeLink = timeElement?.closest('a');
+      let tweetUrl = '';
+      if (timeLink) {
+        const href = timeLink.getAttribute('href');
+        if (href) {
+          tweetUrl = href.startsWith('http') ? href : `https://twitter.com${href}`;
+        }
+      }
       
       // Get any media
       const images = Array.from(tweetElement.querySelectorAll('img[src*="media"]')).map(img => img.src);
       
-      return {
-        text: tweetText,
-        author: authorName,
+      // Return data even if some fields are empty
+      const data = {
+        text: tweetText || 'Tweet content not found',
+        author: authorName || 'Unknown author',
         timestamp: tweetTime,
         url: tweetUrl,
         images: images
       };
+      
+      console.log('Extracted tweet data:', data);
+      return data;
+      
     } catch (error) {
-      console.error('Error extracting tweet data:', error);
+      console.error('Error extracting tweet data:', error, tweetElement);
       return null;
     }
   }
@@ -267,8 +351,10 @@ class TwitterTrelloExporter {
     }
     
     if (exportBtn) {
-      exportBtn.disabled = this.selectedTweets.size === 0;
-      if (this.selectedTweets.size > 0) {
+      exportBtn.disabled = this.selectedTweets.size === 0 || this.isExporting;
+      if (this.isExporting) {
+        exportBtn.textContent = 'Exporting...';
+      } else if (this.selectedTweets.size > 0) {
         exportBtn.textContent = `Export ${this.selectedTweets.size} Tweet${this.selectedTweets.size > 1 ? 's' : ''} to Trello`;
       } else {
         exportBtn.textContent = 'Export to Trello';
@@ -308,22 +394,44 @@ class TwitterTrelloExporter {
   }
 
   async exportSelectedTweets() {
-    const tweets = [];
-    const tweetElements = this.getTweetElements();
+    // Prevent multiple simultaneous exports
+    if (this.isExporting) {
+      return;
+    }
     
-    // Extract data from selected tweets
-    this.selectedTweets.forEach(index => {
-      const tweetElement = tweetElements[index];
+    this.isExporting = true;
+    this.updateSelectionCounter(); // Update UI to show "Exporting..."
+    
+    const tweets = [];
+    
+    // Extract data from selected tweets (using direct element references)
+    this.selectedTweets.forEach((selectionInfo, tweetElement) => {
+      // Check if tweet element still exists in DOM
+      if (!document.contains(tweetElement)) {
+        console.warn('Selected tweet element no longer in DOM - skipping');
+        return;
+      }
+      
       const tweetData = this.extractTweetData(tweetElement);
       if (tweetData) {
-        tweets.push(tweetData);
+        tweets.push({
+          ...tweetData,
+          selectionOrder: selectionInfo.order
+        });
       }
     });
     
     if (tweets.length === 0) {
-      alert('No tweets selected or unable to extract tweet data.');
+      this.isExporting = false;
+      this.updateSelectionCounter();
+      alert('No tweets selected or unable to extract tweet data. The page may have changed - please try selecting tweets again.');
       return;
     }
+    
+    // Sort tweets by selection order
+    tweets.sort((a, b) => a.selectionOrder - b.selectionOrder);
+    
+    console.log(`Exporting ${tweets.length} tweets to Trello...`);
     
     // Send to background script for Trello API call
     try {
@@ -331,6 +439,9 @@ class TwitterTrelloExporter {
         action: 'exportToTrello',
         tweets: tweets
       }, (response) => {
+        this.isExporting = false;
+        this.updateSelectionCounter();
+        
         // Check if the extension context is still valid
         if (chrome.runtime.lastError) {
           console.error('Extension context error:', chrome.runtime.lastError.message);
@@ -346,6 +457,8 @@ class TwitterTrelloExporter {
         }
       });
     } catch (error) {
+      this.isExporting = false;
+      this.updateSelectionCounter();
       console.error('Failed to send message to background script:', error);
       alert('Extension connection failed. Please refresh this page and try again.');
     }
