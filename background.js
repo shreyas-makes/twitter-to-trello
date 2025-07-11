@@ -50,13 +50,18 @@ class TrelloAPI {
       }
       
       try {
+        console.log(`Making Trello API call: ${method} ${endpoint}`, body ? { body } : '');
         const response = await fetch(url, options);
         
         if (!response.ok) {
-          throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error(`Trello API error: ${response.status} ${response.statusText}`, errorText);
+          throw new Error(`API call failed: ${response.status} ${response.statusText} - ${errorText}`);
         }
         
-        return await response.json();
+        const responseData = await response.json();
+        console.log(`Trello API response for ${endpoint}:`, responseData);
+        return responseData;
       } catch (error) {
         console.error('Trello API error:', error);
         throw error;
@@ -110,34 +115,91 @@ class TrelloAPI {
       };
     }
   
+    async getExportedTweets() {
+      const data = await chrome.storage.sync.get(['exportedTweets']);
+      return new Set(data.exportedTweets || []);
+    }
+
+    async saveExportedTweet(tweetUrl) {
+      const exportedTweets = await this.getExportedTweets();
+      exportedTweets.add(tweetUrl);
+      await chrome.storage.sync.set({ exportedTweets: Array.from(exportedTweets) });
+    }
+
     async exportTweetsToTrello(tweets) {
       if (!this.isConfigured()) {
         throw new Error('Trello API not configured. Please set up your credentials first.');
       }
       
-      const results = [];
+      console.log(`Starting Trello export for ${tweets.length} tweets...`);
+      console.log('Using Trello config:', {
+        boardId: this.boardId,
+        listId: this.todoListId,
+        hasApiKey: !!this.apiKey,
+        hasToken: !!this.apiToken
+      });
+      
+      // Check for already exported tweets
+      const exportedTweets = await this.getExportedTweets();
+      const tweetsToExport = [];
+      const skippedTweets = [];
       
       for (const tweet of tweets) {
+        if (tweet.url && exportedTweets.has(tweet.url)) {
+          console.log(`Skipping already exported tweet: ${tweet.url}`);
+          skippedTweets.push(tweet);
+        } else {
+          tweetsToExport.push(tweet);
+        }
+      }
+      
+      if (tweetsToExport.length === 0) {
+        return {
+          allSkipped: true,
+          skippedCount: skippedTweets.length,
+          message: 'All selected tweets have already been exported to Trello.'
+        };
+      }
+      
+      const results = [];
+      
+      for (let i = 0; i < tweetsToExport.length; i++) {
+        const tweet = tweetsToExport[i];
         try {
+          console.log(`Processing tweet ${i + 1}/${tweetsToExport.length}:`, tweet);
+          
           const cardData = this.formatTweetForTrello(tweet);
+          console.log('Formatted card data:', cardData);
+          
           const card = await this.createCard(
             cardData.title,
             cardData.description,
             this.todoListId
           );
           
-          results.push({ success: true, card: card });
+          console.log(`Successfully created card for tweet ${i + 1}:`, card);
+          results.push({ success: true, card: card, tweet: tweet });
+          
+          // Track this tweet as exported
+          if (tweet.url) {
+            await this.saveExportedTweet(tweet.url);
+          }
           
           // Add small delay to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 100));
           
         } catch (error) {
-          console.error('Error creating card for tweet:', error);
-          results.push({ success: false, error: error.message });
+          console.error(`Error creating card for tweet ${i + 1}:`, error);
+          results.push({ success: false, error: error.message, tweet: tweet });
         }
       }
       
-      return results;
+      console.log(`Trello export completed. Results:`, results);
+      return {
+        results: results,
+        exportedCount: tweetsToExport.length,
+        skippedCount: skippedTweets.length
+      };
     }
   }
   
@@ -165,11 +227,19 @@ class TrelloAPI {
       handleGetLists(request.boardId, sendResponse);
       return true;
     }
+    
+    if (request.action === 'getExportedTweets') {
+      handleGetExportedTweets(sendResponse);
+      return true;
+    }
   });
   
   async function handleExportToTrello(tweets, sendResponse) {
     try {
+      console.log(`Received export request for ${tweets.length} tweets:`, tweets);
+      
       if (!trelloAPI.isConfigured()) {
+        console.error('Trello API not configured');
         sendResponse({
           success: false,
           error: 'Please configure your Trello API credentials first.'
@@ -177,23 +247,53 @@ class TrelloAPI {
         return;
       }
       
-      const results = await trelloAPI.exportTweetsToTrello(tweets);
+      console.log('Trello API is configured, starting export...');
+      const exportResult = await trelloAPI.exportTweetsToTrello(tweets);
+      console.log('Export results:', exportResult);
+      
+      // Handle case where all tweets were already exported
+      if (exportResult.allSkipped) {
+        sendResponse({
+          success: false,
+          error: exportResult.message
+        });
+        return;
+      }
+      
+      const results = exportResult.results;
       const successCount = results.filter(r => r.success).length;
       const errorCount = results.filter(r => !r.success).length;
+      const errors = results.filter(r => !r.success).map(r => r.error);
+      const skippedCount = exportResult.skippedCount || 0;
+      
+      console.log(`Export summary: ${successCount} successful, ${errorCount} failed, ${skippedCount} skipped`);
+      if (errors.length > 0) {
+        console.error('Export errors:', errors);
+      }
+      
+      let message = '';
+      if (successCount > 0) {
+        message += `Successfully exported ${successCount} tweet${successCount > 1 ? 's' : ''} to Trello!`;
+      }
+      if (skippedCount > 0) {
+        if (message) message += ' ';
+        message += `${skippedCount} tweet${skippedCount > 1 ? 's were' : ' was'} skipped (already exported).`;
+      }
       
       if (errorCount === 0) {
         sendResponse({
           success: true,
-          message: `Successfully exported ${successCount} tweets to Trello!`
+          message: message
         });
       } else {
         sendResponse({
           success: false,
-          error: `Exported ${successCount} tweets, but ${errorCount} failed.`
+          error: `${message} However, ${errorCount} tweet${errorCount > 1 ? 's' : ''} failed. Errors: ${errors.join(', ')}`
         });
       }
       
     } catch (error) {
+      console.error('Error in handleExportToTrello:', error);
       sendResponse({
         success: false,
         error: error.message
@@ -229,6 +329,15 @@ class TrelloAPI {
     try {
       const lists = await trelloAPI.getLists(boardId);
       sendResponse({ success: true, lists: lists });
+    } catch (error) {
+      sendResponse({ success: false, error: error.message });
+    }
+  }
+  
+  async function handleGetExportedTweets(sendResponse) {
+    try {
+      const exportedTweets = await trelloAPI.getExportedTweets();
+      sendResponse({ success: true, exportedTweets: Array.from(exportedTweets) });
     } catch (error) {
       sendResponse({ success: false, error: error.message });
     }

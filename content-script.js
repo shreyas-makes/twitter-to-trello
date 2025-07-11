@@ -7,10 +7,12 @@ class TwitterTrelloExporter {
     this.mutationObserver = null;
     this.selectionCounter = 0;
     this.isExporting = false; // Prevent multiple simultaneous exports
+    this.exportedTweets = new Set(); // Cache of exported tweet URLs
     this.init();
   }
 
-  init() {
+  async init() {
+    await this.loadExportedTweets();
     this.createFloatingButton();
     this.setupEventListeners();
     this.setupMutationObserver();
@@ -73,11 +75,22 @@ class TwitterTrelloExporter {
       tweet.classList.add('twitter-trello-selectable');
       tweet.dataset.tweetIndex = index;
       
+      // Check if this tweet is already exported
+      const tweetData = this.extractTweetData(tweet);
+      const isExported = tweetData && tweetData.url && this.exportedTweets.has(tweetData.url);
+      
       const clickHandler = (e) => {
         if (this.isSelectionMode) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
+          
+          // Prevent selection of already exported tweets
+          if (isExported) {
+            this.showExportedTweetMessage();
+            return;
+          }
+          
           this.toggleTweetSelection(tweet);
         }
       };
@@ -94,7 +107,7 @@ class TwitterTrelloExporter {
       this.tweetEventListeners.set(tweet, clickHandler);
       
       // Add visual selection overlay
-      this.addSelectionOverlay(tweet);
+      this.addSelectionOverlay(tweet, isExported);
     });
   }
 
@@ -127,18 +140,34 @@ class TwitterTrelloExporter {
     return [];
   }
 
-  addSelectionOverlay(tweetElement) {
+  addSelectionOverlay(tweetElement, isExported = false) {
     // Create selection overlay for better visual feedback
     const overlay = document.createElement('div');
-    overlay.className = 'tweet-selection-overlay';
-    overlay.innerHTML = `
-      <div class="selection-indicator">
-        <div class="selection-icon">✓</div>
-        <div class="selection-text">Click to select</div>
-      </div>
-    `;
+    overlay.className = `tweet-selection-overlay ${isExported ? 'exported' : ''}`;
+    
+    if (isExported) {
+      overlay.innerHTML = `
+        <div class="selection-indicator exported">
+          <div class="selection-icon">📋</div>
+          <div class="selection-text">Already exported</div>
+        </div>
+      `;
+    } else {
+      overlay.innerHTML = `
+        <div class="selection-indicator">
+          <div class="selection-icon">+</div>
+          <div class="selection-text">Click to select</div>
+        </div>
+      `;
+    }
+    
     tweetElement.style.position = 'relative';
     tweetElement.appendChild(overlay);
+    
+    // Add exported class to tweet element for styling
+    if (isExported) {
+      tweetElement.classList.add('twitter-trello-exported');
+    }
   }
   
   toggleTweetSelection(tweetElement) {
@@ -170,11 +199,19 @@ class TwitterTrelloExporter {
       // Renumber remaining selections
       this.renumberSelections();
     } else {
-      // Select tweet
+      // Select tweet - extract and store data immediately
       this.selectionCounter++;
+      const tweetData = this.extractTweetData(tweetElement);
+      
+      if (!tweetData) {
+        console.error(`Failed to extract data for tweet during selection - skipping`);
+        return;
+      }
+      
       this.selectedTweets.set(tweetElement, {
         order: this.selectionCounter,
-        element: tweetElement
+        element: tweetElement,
+        data: tweetData // Store the data immediately when selected
       });
       tweetElement.classList.add('twitter-trello-selected');
       
@@ -215,9 +252,11 @@ class TwitterTrelloExporter {
     
     selections.forEach(([element, info]) => {
       this.selectionCounter++;
+      const tweetData = this.extractTweetData(element);
       this.selectedTweets.set(element, {
         order: this.selectionCounter,
-        element: element
+        element: element,
+        data: tweetData // Re-extract and store data during renumbering
       });
       
       // Update the number badge
@@ -405,21 +444,43 @@ class TwitterTrelloExporter {
     const tweets = [];
     
     // Extract data from selected tweets (using direct element references)
+    console.log(`Starting extraction from ${this.selectedTweets.size} selected tweets...`);
+    
     this.selectedTweets.forEach((selectionInfo, tweetElement) => {
+      console.log(`Processing tweet ${selectionInfo.order}...`);
+      
+      // Use the pre-stored data if available
+      if (selectionInfo.data) {
+        console.log(`Using pre-stored data for tweet ${selectionInfo.order}:`, selectionInfo.data);
+        tweets.push({
+          ...selectionInfo.data,
+          selectionOrder: selectionInfo.order
+        });
+        return;
+      }
+      
+      // Fallback: try to extract data if not pre-stored
+      console.warn(`No pre-stored data for tweet ${selectionInfo.order}, attempting fresh extraction...`);
+      
       // Check if tweet element still exists in DOM
       if (!document.contains(tweetElement)) {
-        console.warn('Selected tweet element no longer in DOM - skipping');
+        console.warn(`Tweet ${selectionInfo.order} element no longer in DOM - skipping`);
         return;
       }
       
       const tweetData = this.extractTweetData(tweetElement);
       if (tweetData) {
+        console.log(`Successfully extracted fresh data for tweet ${selectionInfo.order}:`, tweetData);
         tweets.push({
           ...tweetData,
           selectionOrder: selectionInfo.order
         });
+      } else {
+        console.error(`Failed to extract data for tweet ${selectionInfo.order}`);
       }
     });
+    
+    console.log(`Final extracted tweets count: ${tweets.length}`);
     
     if (tweets.length === 0) {
       this.isExporting = false;
@@ -450,7 +511,9 @@ class TwitterTrelloExporter {
         }
         
         if (response && response.success) {
-          alert(`Successfully exported ${tweets.length} tweets to Trello!`);
+          // Refresh exported tweets cache after successful export
+          this.loadExportedTweets();
+          alert(response.message || `Successfully exported ${tweets.length} tweets to Trello!`);
           this.exitSelectionMode();
         } else {
           alert(`Error exporting tweets: ${response ? response.error : 'Unknown error'}`);
@@ -462,6 +525,38 @@ class TwitterTrelloExporter {
       console.error('Failed to send message to background script:', error);
       alert('Extension connection failed. Please refresh this page and try again.');
     }
+  }
+
+  async loadExportedTweets() {
+    try {
+      chrome.runtime.sendMessage({ action: 'getExportedTweets' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to load exported tweets:', chrome.runtime.lastError.message);
+          return;
+        }
+        
+        if (response && response.success) {
+          this.exportedTweets = new Set(response.exportedTweets);
+          console.log(`Loaded ${this.exportedTweets.size} exported tweets`);
+        }
+      });
+    } catch (error) {
+      console.error('Error loading exported tweets:', error);
+    }
+  }
+  
+  showExportedTweetMessage() {
+    // Show a brief message that the tweet is already exported
+    const message = document.createElement('div');
+    message.className = 'exported-tweet-message';
+    message.textContent = 'This tweet has already been exported to Trello';
+    document.body.appendChild(message);
+    
+    setTimeout(() => {
+      if (message.parentNode) {
+        message.parentNode.removeChild(message);
+      }
+    }, 2000);
   }
 
   setupEventListeners() {
@@ -557,11 +652,22 @@ class TwitterTrelloExporter {
       tweet.classList.add('twitter-trello-selectable');
       tweet.dataset.tweetIndex = index;
       
+      // Check if this tweet is already exported
+      const tweetData = this.extractTweetData(tweet);
+      const isExported = tweetData && tweetData.url && this.exportedTweets.has(tweetData.url);
+      
       const clickHandler = (e) => {
         if (this.isSelectionMode) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
+          
+          // Prevent selection of already exported tweets
+          if (isExported) {
+            this.showExportedTweetMessage();
+            return;
+          }
+          
           this.toggleTweetSelection(tweet);
         }
       };
@@ -579,7 +685,7 @@ class TwitterTrelloExporter {
       
       // Add visual selection overlay if not present
       if (!tweet.querySelector('.tweet-selection-overlay')) {
-        this.addSelectionOverlay(tweet);
+        this.addSelectionOverlay(tweet, isExported);
       }
     });
   }

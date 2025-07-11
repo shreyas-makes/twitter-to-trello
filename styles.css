@@ -233,3 +233,61 @@
     right: 80px;
     z-index: 9998;
   }
+  
+  /* Exported tweet styles */
+  .twitter-trello-exported {
+    opacity: 0.6;
+    filter: grayscale(30%);
+  }
+  
+  .twitter-trello-exported .tweet-selection-overlay.exported {
+    pointer-events: none;
+  }
+  
+  .twitter-trello-exported:hover {
+    border-color: #94a3b8 !important;
+    background-color: rgba(148, 163, 184, 0.08) !important;
+    transform: none !important;
+    box-shadow: 0 2px 8px rgba(148, 163, 184, 0.2) !important;
+  }
+  
+  .selection-indicator.exported {
+    background: rgba(148, 163, 184, 0.95) !important;
+    opacity: 1 !important;
+    transform: scale(1) translateY(0) !important;
+  }
+  
+  .twitter-trello-exported:hover .selection-indicator.exported {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  
+  /* Exported tweet message */
+  .exported-tweet-message {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10001;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: messageAppear 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  @keyframes messageAppear {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.8);
+    }
+    100% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }

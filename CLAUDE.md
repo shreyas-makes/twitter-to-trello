@@ -42,7 +42,7 @@ This is a Chrome Manifest V3 extension that allows users to manually select and 
 - **Message Passing**: Content script communicates with background script via `chrome.runtime.sendMessage()` for Trello exports
 - **Storage**: All configuration persisted in `chrome.storage.sync` with keys: `trelloApiKey`, `trelloToken`, `boardId`, `todoListId`
 - **Event Management**: Content script uses Map to track event listeners for proper cleanup and memory management
-- **Selection System**: Tweets get overlay elements with selection indicators, numbered badges, and visual feedback animations
+- **Selection System**: Tweets get overlay elements with selection indicators, numbered badges, and visual feedback animations. Uses Map-based storage with direct element references to maintain selection order and handle unlimited selections
 - **Dynamic DOM Handling**: MutationObserver automatically reattaches event listeners when Twitter's SPA updates content
 
 ### Twitter/X DOM Handling
@@ -60,6 +60,16 @@ The extension works across Twitter's evolving DOM structure by:
 **Event Listeners Lost**: Twitter's SPA dynamically replaces DOM elements, causing event listeners to detach. The MutationObserver system (`setupMutationObserver()`, `reattachEventListeners()`) automatically detects new content and reattaches handlers.
 
 **Bookmarks Page Selection**: Uses specialized DOM selectors and prevents navigation with capture-phase event handling to ensure tweets can be selected instead of navigated to.
+
+### Tweet Selection System Details
+
+**Selection Storage**: Uses `Map<Element, SelectionInfo>` instead of indices to store direct references to tweet elements with selection order metadata. This prevents index misalignment when DOM changes and supports unlimited selections.
+
+**Selection Numbering**: Each selected tweet displays its selection order (1st, 2nd, 3rd, etc.) rather than total count. Numbers are automatically renumbered when tweets are deselected to maintain sequential order.
+
+**Export Prevention**: `isExporting` flag prevents multiple simultaneous export operations and shows "Exporting..." UI state during processing.
+
+**Element Validation**: Before export, uses `document.contains()` to verify selected elements still exist in DOM, gracefully handling cases where Twitter has updated content.
 
 ### Trello Integration Flow
 
