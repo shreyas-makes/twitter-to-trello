@@ -3,6 +3,7 @@ class TwitterTrelloExporter {
   constructor() {
     this.selectedTweets = new Set();
     this.isSelectionMode = false;
+    this.tweetEventListeners = new Map();
     this.init();
   }
 
@@ -64,27 +65,93 @@ class TwitterTrelloExporter {
       tweet.classList.add('twitter-trello-selectable');
       tweet.dataset.tweetIndex = index;
       
-      tweet.addEventListener('click', (e) => {
+      const clickHandler = (e) => {
         if (this.isSelectionMode) {
           e.preventDefault();
           e.stopPropagation();
+          e.stopImmediatePropagation();
           this.toggleTweetSelection(tweet);
         }
+      };
+      
+      // Use capture phase to intercept clicks before other handlers
+      tweet.addEventListener('click', clickHandler, { capture: true });
+      
+      // Also add to all interactive elements within the tweet
+      const interactiveElements = tweet.querySelectorAll('a, button, [role="button"], [role="link"]');
+      interactiveElements.forEach(element => {
+        element.addEventListener('click', clickHandler, { capture: true });
       });
+      
+      this.tweetEventListeners.set(tweet, clickHandler);
+      
+      // Add visual selection overlay
+      this.addSelectionOverlay(tweet);
     });
   }
 
   getTweetElements() {
-    // Target tweet containers - this selector may need adjustment based on Twitter's current DOM
-    return document.querySelectorAll('article[data-testid="tweet"]');
+    // Check if we're on bookmarks page and use appropriate selectors
+    const isBookmarksPage = window.location.href.includes('/bookmarks');
+    
+    const selectors = [
+      'article[data-testid="tweet"]',
+      'div[data-testid="tweet"]', 
+      'article[role="article"]',
+      'div[data-testid="cellInnerDiv"] article',
+      // Bookmarks page specific selectors
+      ...(isBookmarksPage ? [
+        'div[data-testid="cellInnerDiv"] div[data-testid="tweet"]',
+        '[data-testid="bookmark"] article',
+        'div[data-testid="primaryColumn"] article'
+      ] : [])
+    ];
+    
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      if (elements.length > 0) {
+        console.log(`TwitterTrelloExporter: Found ${elements.length} tweets using selector: ${selector}`);
+        return elements;
+      }
+    }
+    
+    console.warn('TwitterTrelloExporter: No tweet elements found with known selectors');
+    return [];
   }
 
+  addSelectionOverlay(tweetElement) {
+    // Create selection overlay for better visual feedback
+    const overlay = document.createElement('div');
+    overlay.className = 'tweet-selection-overlay';
+    overlay.innerHTML = `
+      <div class="selection-indicator">
+        <div class="selection-icon">✓</div>
+        <div class="selection-text">Click to select</div>
+      </div>
+    `;
+    tweetElement.style.position = 'relative';
+    tweetElement.appendChild(overlay);
+  }
+  
   toggleTweetSelection(tweetElement) {
     const index = tweetElement.dataset.tweetIndex;
+    const overlay = tweetElement.querySelector('.tweet-selection-overlay');
     
     if (this.selectedTweets.has(index)) {
       this.selectedTweets.delete(index);
       tweetElement.classList.remove('twitter-trello-selected');
+      
+      // Update overlay to unselected state
+      if (overlay) {
+        const indicator = overlay.querySelector('.selection-indicator');
+        const icon = overlay.querySelector('.selection-icon');
+        const text = overlay.querySelector('.selection-text');
+        
+        indicator.classList.remove('selected');
+        icon.textContent = '+';
+        text.textContent = 'Click to select';
+      }
+      
       // Remove selection number if it exists
       const selectionNumber = tweetElement.querySelector('.selection-number');
       if (selectionNumber) {
@@ -93,6 +160,17 @@ class TwitterTrelloExporter {
     } else {
       this.selectedTweets.add(index);
       tweetElement.classList.add('twitter-trello-selected');
+      
+      // Update overlay to selected state
+      if (overlay) {
+        const indicator = overlay.querySelector('.selection-indicator');
+        const icon = overlay.querySelector('.selection-icon');
+        const text = overlay.querySelector('.selection-text');
+        
+        indicator.classList.add('selected');
+        icon.textContent = '✓';
+        text.textContent = 'Selected';
+      }
       
       // Add selection number badge
       const selectionNumber = document.createElement('div');
@@ -103,11 +181,11 @@ class TwitterTrelloExporter {
     
     this.updateSelectionCounter();
     
-    // Add a subtle animation to show the action was registered
-    tweetElement.style.transform = 'scale(0.98)';
+    // Add selection animation
+    tweetElement.classList.add('selection-animation');
     setTimeout(() => {
-      tweetElement.style.transform = '';
-    }, 150);
+      tweetElement.classList.remove('selection-animation');
+    }, 300);
   }
 
   extractTweetData(tweetElement) {
@@ -138,13 +216,16 @@ class TwitterTrelloExporter {
   }
 
   showSelectionOverlay() {
+    const isBookmarksPage = window.location.href.includes('/bookmarks');
+    const pageContext = isBookmarksPage ? 'bookmarks' : 'tweets';
+    
     const overlay = document.createElement('div');
     overlay.id = 'twitter-trello-selection-overlay';
     overlay.innerHTML = `
       <div class="selection-info">
         <div class="selection-status">
-          <div id="selection-counter">0 tweets selected</div>
-          <div class="selection-subtitle">Click tweets to add them to your export list</div>
+          <div id="selection-counter">0 ${pageContext} selected</div>
+          <div class="selection-subtitle">Click ${pageContext} to add them to your Trello export list</div>
         </div>
       </div>
       <div class="selection-actions">
@@ -199,7 +280,31 @@ class TwitterTrelloExporter {
   removeHighlights() {
     document.querySelectorAll('.twitter-trello-selectable').forEach(tweet => {
       tweet.classList.remove('twitter-trello-selectable', 'twitter-trello-selected');
-      tweet.removeEventListener('click', this.toggleTweetSelection);
+      
+      // Remove stored event listener
+      const handler = this.tweetEventListeners.get(tweet);
+      if (handler) {
+        tweet.removeEventListener('click', handler, { capture: true });
+        
+        // Remove from interactive elements too
+        const interactiveElements = tweet.querySelectorAll('a, button, [role="button"], [role="link"]');
+        interactiveElements.forEach(element => {
+          element.removeEventListener('click', handler, { capture: true });
+        });
+        
+        this.tweetEventListeners.delete(tweet);
+      }
+      
+      // Remove selection overlays and numbers
+      const selectionOverlay = tweet.querySelector('.tweet-selection-overlay');
+      if (selectionOverlay) {
+        selectionOverlay.remove();
+      }
+      
+      const selectionNumber = tweet.querySelector('.selection-number');
+      if (selectionNumber) {
+        selectionNumber.remove();
+      }
     });
   }
 
