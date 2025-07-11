@@ -22,6 +22,8 @@ This is a Chrome Manifest V3 extension that allows users to manually select and 
 - Uses capture-phase event listeners to prevent navigation during selection
 - Supports both regular Twitter feeds and bookmarks page with different DOM selectors
 - Manages selection state with visual indicators and animations
+- **MutationObserver**: Monitors DOM changes and re-attaches event listeners when Twitter dynamically loads new content
+- **Error Handling**: Comprehensive error handling for extension context invalidation scenarios
 
 **background.js** - API integration and data processing  
 - `TrelloAPI` class handles all Trello API communication
@@ -41,13 +43,23 @@ This is a Chrome Manifest V3 extension that allows users to manually select and 
 - **Storage**: All configuration persisted in `chrome.storage.sync` with keys: `trelloApiKey`, `trelloToken`, `boardId`, `todoListId`
 - **Event Management**: Content script uses Map to track event listeners for proper cleanup and memory management
 - **Selection System**: Tweets get overlay elements with selection indicators, numbered badges, and visual feedback animations
+- **Dynamic DOM Handling**: MutationObserver automatically reattaches event listeners when Twitter's SPA updates content
 
 ### Twitter/X DOM Handling
 
 The extension works across Twitter's evolving DOM structure by:
 - Testing multiple CSS selectors for tweet elements in priority order
-- Detecting bookmarks page context for specialized selectors
+- Detecting bookmarks page context for specialized selectors  
 - Using capture-phase event handling to intercept clicks before Twitter's navigation handlers
+- **Critical**: MutationObserver monitors for new tweet elements and reattaches selection handlers automatically
+
+### Common Issues & Solutions
+
+**Extension Context Invalidated**: When the extension is reloaded while running, `chrome.runtime` APIs fail. The extension now handles this gracefully with try/catch blocks and user-friendly error messages directing users to refresh the page.
+
+**Event Listeners Lost**: Twitter's SPA dynamically replaces DOM elements, causing event listeners to detach. The MutationObserver system (`setupMutationObserver()`, `reattachEventListeners()`) automatically detects new content and reattaches handlers.
+
+**Bookmarks Page Selection**: Uses specialized DOM selectors and prevents navigation with capture-phase event handling to ensure tweets can be selected instead of navigated to.
 
 ### Trello Integration Flow
 

@@ -331,27 +331,48 @@ class TwitterTrelloExporter {
     }
     
     // Send to background script for Trello API call
-    chrome.runtime.sendMessage({
-      action: 'exportToTrello',
-      tweets: tweets
-    }, (response) => {
-      if (response.success) {
-        alert(`Successfully exported ${tweets.length} tweets to Trello!`);
-        this.exitSelectionMode();
-      } else {
-        alert(`Error exporting tweets: ${response.error}`);
-      }
-    });
+    try {
+      chrome.runtime.sendMessage({
+        action: 'exportToTrello',
+        tweets: tweets
+      }, (response) => {
+        // Check if the extension context is still valid
+        if (chrome.runtime.lastError) {
+          console.error('Extension context error:', chrome.runtime.lastError.message);
+          alert('Extension was reloaded. Please refresh this page and try again.');
+          return;
+        }
+        
+        if (response && response.success) {
+          alert(`Successfully exported ${tweets.length} tweets to Trello!`);
+          this.exitSelectionMode();
+        } else {
+          alert(`Error exporting tweets: ${response ? response.error : 'Unknown error'}`);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to send message to background script:', error);
+      alert('Extension connection failed. Please refresh this page and try again.');
+    }
   }
 
   setupEventListeners() {
     // Listen for messages from popup/background
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (request.action === 'startSelection') {
-        this.toggleSelectionMode();
-        sendResponse({success: true});
-      }
-    });
+    try {
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        try {
+          if (request.action === 'startSelection') {
+            this.toggleSelectionMode();
+            sendResponse({success: true});
+          }
+        } catch (error) {
+          console.error('Error handling runtime message:', error);
+          sendResponse({success: false, error: error.message});
+        }
+      });
+    } catch (error) {
+      console.error('Failed to setup runtime message listener:', error);
+    }
   }
 
   setupMutationObserver() {
