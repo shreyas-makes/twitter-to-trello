@@ -83,6 +83,20 @@ class TrelloAPI {
         idList: listId
       });
     }
+
+    async addAttachmentToCard(cardId, attachmentUrl, name = null) {
+      const attachmentName = name || attachmentUrl.split('/').pop().split('?')[0];
+      return await this.makeApiCall(`cards/${cardId}/attachments`, 'POST', {
+        url: attachmentUrl,
+        name: attachmentName
+      });
+    }
+
+    async setCoverAttachment(cardId, attachmentId) {
+      return await this.makeApiCall(`cards/${cardId}`, 'PUT', {
+        idAttachmentCover: attachmentId
+      });
+    }
   
     formatTweetForTrello(tweet) {
       const title = tweet.text.length > 100 
@@ -178,6 +192,42 @@ class TrelloAPI {
           );
           
           console.log(`Successfully created card for tweet ${i + 1}:`, card);
+          
+          // Add image attachments if present
+          if (tweet.images && tweet.images.length > 0) {
+            try {
+              console.log(`Adding ${tweet.images.length} image(s) to card...`);
+              
+              for (let j = 0; j < tweet.images.length; j++) {
+                const imageUrl = tweet.images[j];
+                console.log(`Attaching image ${j + 1}: ${imageUrl}`);
+                
+                const attachment = await this.addAttachmentToCard(
+                  card.id, 
+                  imageUrl, 
+                  `Tweet Image ${j + 1}`
+                );
+                
+                console.log(`Image ${j + 1} attached:`, attachment);
+                
+                // Set first image as card cover
+                if (j === 0 && attachment.id) {
+                  console.log(`Setting first image as card cover...`);
+                  await this.setCoverAttachment(card.id, attachment.id);
+                  console.log(`Card cover set successfully`);
+                }
+                
+                // Small delay between attachments to avoid rate limiting
+                if (j < tweet.images.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+              }
+            } catch (imageError) {
+              console.error(`Error adding images to card:`, imageError);
+              // Don't fail the entire operation if image attachment fails
+            }
+          }
+          
           results.push({ success: true, card: card, tweet: tweet });
           
           // Track this tweet as exported

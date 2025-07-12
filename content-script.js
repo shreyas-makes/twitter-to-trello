@@ -321,8 +321,24 @@ class TwitterTrelloExporter {
         }
       }
       
-      // Get any media
-      const images = Array.from(tweetElement.querySelectorAll('img[src*="media"]')).map(img => img.src);
+      // Get any media with improved quality
+      const imageElements = tweetElement.querySelectorAll('img[src*="media"], img[src*="pbs.twimg.com"]');
+      const images = Array.from(imageElements).map(img => {
+        let src = img.src;
+        
+        // Convert to higher quality format if possible
+        if (src.includes('pbs.twimg.com/media/')) {
+          // Remove size parameters and set to large format
+          src = src.split('?')[0]; // Remove query parameters
+          if (!src.includes('format=') && !src.includes('name=')) {
+            src += '?format=jpg&name=large'; // Request large size
+          } else if (src.includes('name=small') || src.includes('name=medium')) {
+            src = src.replace(/name=(small|medium|thumb)/, 'name=large');
+          }
+        }
+        
+        return src;
+      }).filter(src => src && !src.includes('emoji')); // Filter out emoji images
       
       // Return data even if some fields are empty
       const data = {
