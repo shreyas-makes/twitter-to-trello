@@ -5,7 +5,8 @@ class TrelloAPI {
       this.apiToken = null;
       this.boardId = null;
       this.todoListId = null;
-      this.init();
+      this.initialized = false;
+      this.initPromise = this.init();
     }
   
     async init() {
@@ -15,6 +16,13 @@ class TrelloAPI {
       this.apiToken = data.trelloToken;
       this.boardId = data.boardId;
       this.todoListId = data.todoListId;
+      this.initialized = true;
+    }
+
+    async ensureInitialized() {
+      if (!this.initialized) {
+        await this.initPromise;
+      }
     }
   
     async saveCredentials(apiKey, token, boardId, todoListId) {
@@ -210,11 +218,17 @@ class TrelloAPI {
                 
                 console.log(`Image ${j + 1} attached:`, attachment);
                 
-                // Set first image as card cover
-                if (j === 0 && attachment.id) {
-                  console.log(`Setting first image as card cover...`);
-                  await this.setCoverAttachment(card.id, attachment.id);
-                  console.log(`Card cover set successfully`);
+                // Set cover: skip profile images, use first non-profile image
+                const isProfileImage = imageUrl.includes('profile_images');
+                if (!isProfileImage && attachment.id) {
+                  // Find if we already set a cover (to avoid overwriting)
+                  const hasExistingCover = tweet.images.slice(0, j).some(url => !url.includes('profile_images'));
+                  
+                  if (!hasExistingCover) {
+                    console.log(`Setting first non-profile image as card cover...`);
+                    await this.setCoverAttachment(card.id, attachment.id);
+                    console.log(`Card cover set successfully`);
+                  }
                 }
                 
                 // Small delay between attachments to avoid rate limiting
@@ -287,6 +301,9 @@ class TrelloAPI {
   async function handleExportToTrello(tweets, sendResponse) {
     try {
       console.log(`Received export request for ${tweets.length} tweets:`, tweets);
+      
+      // Ensure API is fully initialized before checking configuration
+      await trelloAPI.ensureInitialized();
       
       if (!trelloAPI.isConfigured()) {
         console.error('Trello API not configured');
@@ -368,6 +385,7 @@ class TrelloAPI {
   
   async function handleGetBoards(sendResponse) {
     try {
+      await trelloAPI.ensureInitialized();
       const boards = await trelloAPI.getBoards();
       sendResponse({ success: true, boards: boards });
     } catch (error) {
@@ -377,6 +395,7 @@ class TrelloAPI {
   
   async function handleGetLists(boardId, sendResponse) {
     try {
+      await trelloAPI.ensureInitialized();
       const lists = await trelloAPI.getLists(boardId);
       sendResponse({ success: true, lists: lists });
     } catch (error) {
@@ -386,6 +405,7 @@ class TrelloAPI {
   
   async function handleGetExportedTweets(sendResponse) {
     try {
+      await trelloAPI.ensureInitialized();
       const exportedTweets = await trelloAPI.getExportedTweets();
       sendResponse({ success: true, exportedTweets: Array.from(exportedTweets) });
     } catch (error) {
