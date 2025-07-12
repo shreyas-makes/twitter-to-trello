@@ -26,11 +26,7 @@ A Chrome extension that allows you to manually select and export Twitter/X tweet
 
 ### Step 2: Install the Extension
 
-1. **Download or Clone** this repository:
-   ```bash
-   git clone https://github.com/yourusername/twitter-to-trello-extension.git
-   cd twitter-to-trello-extension
-   ```
+1. **Download** this extension
 
 2. **Open Chrome Extensions page**:
    - Navigate to `chrome://extensions/`
@@ -41,7 +37,7 @@ A Chrome extension that allows you to manually select and export Twitter/X tweet
 
 4. **Load the Extension**:
    - Click "Load unpacked"
-   - Select the `twitter-to-trello-extension` folder
+   - Select the extension folder
    - The extension should now appear in your extensions list
 
 ### Step 3: Configure the Extension
@@ -122,18 +118,48 @@ A Chrome extension that allows you to manually select and export Twitter/X tweet
 - This extension uses advanced event handling to prevent navigation during selection
 - If you're still having issues, try clicking directly on the tweet text rather than links/buttons
 
-## 🤝 Contributing
 
-1. Fork this repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and test thoroughly
-4. Commit: `git commit -am 'Add some feature'`
-5. Push: `git push origin feature-name`
-6. Create a Pull Request
+## 📋 Privacy Policy
 
-## 📝 License
+### Overview
+Twitter to Trello Exporter is a Chrome browser extension that allows users to export tweets from Twitter/X to their Trello boards. This privacy policy explains how we handle your information.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Information We Collect
+The Extension accesses and processes the following information:
+
+**From Twitter/X:**
+- Tweet content (text, images, timestamps)
+- Author information (usernames, display names)
+- Tweet URLs and metadata
+- **Note**: This data is only processed locally and is not stored by us
+
+**User-Provided Information:**
+- Trello API credentials (API key and token)
+- Selected Trello board and list IDs
+- **Storage**: Saved locally in your browser using Chrome's storage API
+
+### How We Use Information
+- **Tweet Data**: Processed locally to format and export to your chosen Trello board
+- **Trello Credentials**: Used to authenticate API calls to create cards in your Trello account
+- **No External Storage**: We do not store, transmit, or retain any of your data on external servers
+
+### Data Sharing
+We do not share, sell, or transmit your data to any third parties except:
+- **Trello**: Your selected tweet data is sent directly to Trello's API to create cards
+- **No Analytics**: We do not use analytics or tracking services
+
+### Data Security
+- All data processing happens locally in your browser
+- Trello credentials are stored securely using Chrome's encrypted storage
+- No data is transmitted to our servers or any third-party services other than Trello
+
+### Your Rights
+- **Access**: You can view your stored credentials in the extension popup
+- **Deletion**: You can clear all stored data by removing the extension
+- **Control**: You have full control over what tweets to export and when
+
+### Contact
+For questions about this privacy policy, please contact: shreyas314159@gmail.com
 
 ## ⚠️ Disclaimer
 
