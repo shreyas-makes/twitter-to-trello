@@ -166,5 +166,3 @@ For questions about this privacy policy, please contact: shreyas314159@gmail.com
 This extension is not affiliated with Twitter/X or Trello. Use responsibly and in accordance with their terms of service.
 
 ---
-
-**Made with ❤️ for productivity enthusiasts who want to turn tweets into actionable Trello cards!**
