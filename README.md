@@ -2,6 +2,8 @@
 
 A Chrome extension that allows you to manually select and export Twitter/X tweets (including bookmarks) to Trello cards. Perfect for saving interesting tweets as actionable items in your Trello workflow.
 
+https://www.youtube.com/watch?v=iZ_vpWOhWDw
+
 ## ✨ Features
 
 - 🐦 **Select tweets from any Twitter/X page** - Works on feeds, profiles, and bookmarks
